@@ -1,0 +1,66 @@
+/* Game-center broadcast view: the scene is an original photo asset while all
+   scores, pitch locations and live state remain real UI elements. */
+.trackingGrid.improved .pitchView,
+.trackingGrid.improved .pitchView[data-stadium]{
+  height:620px;
+  overflow:hidden;
+  background:
+    linear-gradient(90deg,rgba(4,19,31,.42) 0,rgba(4,19,31,.08) 31%,transparent 55%),
+    linear-gradient(0deg,rgba(4,19,31,.28),transparent 35%),
+    url('/gamecenter-stadium-v2.png') center center/cover no-repeat!important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),0 12px 32px rgba(10,34,48,.14);
+}
+.trackingGrid.improved .pitchView:before,
+.trackingGrid.improved .pitchView:after,
+.trackingGrid.improved .fieldGlow,
+.trackingGrid.improved .batter,
+.trackingGrid.improved .pitcherFigure{display:none!important}
+.trackingGrid.improved .countBoard{
+  left:24px;top:24px;width:138px;
+  background:rgba(7,28,42,.91);
+  border:1px solid rgba(255,255,255,.13);
+  backdrop-filter:blur(10px);
+}
+.trackingGrid.improved .pitchLabel{
+  top:38px;left:50%;min-width:245px;
+  padding:14px 26px;
+  background:rgba(7,28,42,.82);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 8px 28px rgba(0,0,0,.22);
+  backdrop-filter:blur(10px);
+}
+.trackingGrid.improved .strikeZone{
+  left:50%;top:275px;width:132px;height:164px;
+  background:rgba(7,25,37,.13);
+  border:2px solid rgba(255,255,255,.82);
+  box-shadow:0 0 0 1px rgba(4,22,34,.22),0 8px 30px rgba(0,0,0,.16);
+}
+.trackingGrid.improved .strikeZone>i{border-color:rgba(255,255,255,.27)}
+.trackingGrid.improved .stadiumBadge{
+  top:24px;right:24px;padding:8px 14px;
+  background:rgba(255,255,255,.9);color:#102b3c;
+  border:1px solid rgba(255,255,255,.8);
+  backdrop-filter:blur(10px);
+}
+.trackingGrid.improved .pitchSequence{
+  left:190px;right:190px;bottom:18px;
+  background:rgba(7,28,42,.9);
+  border-color:rgba(255,255,255,.16);
+  backdrop-filter:blur(12px);
+}
+@media(max-width:1050px){
+  .trackingGrid.improved .pitchView{height:580px}
+  .trackingGrid.improved .pitchSequence{left:175px;right:135px}
+}
+@media(max-width:700px){
+  .trackingGrid.improved .pitchView,
+  .trackingGrid.improved .pitchView[data-stadium]{
+    height:460px;
+    background-position:62% center!important;
+  }
+  .trackingGrid.improved .countBoard{left:8px;top:8px;transform:scale(.72);transform-origin:top left}
+  .trackingGrid.improved .stadiumBadge{top:8px;right:8px}
+  .trackingGrid.improved .pitchLabel{top:18px;left:59%;min-width:150px;padding:9px 12px}
+  .trackingGrid.improved .strikeZone{left:48%;top:205px;width:92px;height:118px}
+  .trackingGrid.improved .pitchSequence{left:8px;right:8px;bottom:8px}
+}

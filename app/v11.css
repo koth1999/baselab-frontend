@@ -1,0 +1,18 @@
+.rankingTable.fullStats{overflow-x:auto;overscroll-behavior-inline:contain}
+.rankingTable.fullStats .rankingTableHead,
+.rankingTable.fullStats>button{width:max-content!important;min-width:100%;padding:0 20px}
+.rankingTable.fullStats .rankingTableHead span,
+.rankingTable.fullStats>button span,
+.rankingTable.fullStats>button em{display:block!important;white-space:nowrap}
+.rankingTable.fullStats .rankingTableHead{position:sticky;top:0;z-index:2}
+.rankingTable.fullStats>button strong{position:sticky;left:20px;background:inherit;z-index:1}
+.rankingTable.fullStats .rankingTableHead span:first-child{position:sticky;left:20px;background:var(--navy);z-index:2}
+.teamAtBatSplit{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px;background:#f4f6f3}
+.teamAtBatPanel{min-width:0;background:#fff;border:1px solid #dde4e7}
+.teamAtBatPanel>header{height:54px;display:flex;align-items:center;gap:10px;padding:0 14px;border-top:4px solid}
+.teamAtBatPanel>header span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:11px;font-weight:900}
+.teamAtBatPanel>header strong{font-size:15px}
+.teamAtBatPanel>header small{margin-left:auto;color:#8a959b;font-size:9px}
+.teamAtBatPanel .atBatRows>div{grid-template-columns:32px minmax(105px,1.2fr) minmax(82px,1fr) 38px 45px;gap:8px;padding:0 12px}
+.teamAtBatPanel .atBatRows strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){.teamAtBatSplit{grid-template-columns:1fr}.rankingTable.fullStats>button strong{left:12px}.rankingTable.fullStats .rankingTableHead span:first-child{left:12px}}
