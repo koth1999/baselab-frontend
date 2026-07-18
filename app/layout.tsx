@@ -15,6 +15,7 @@ import "./v13.css";
 import "./v14.css";
 import "./v15.css";
 import "./v16.css";
+import "./v17.css";
 
 export const metadata: Metadata = {
   title: "BASELAB — KBO 선수 데이터 분석",

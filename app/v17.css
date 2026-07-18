@@ -1,0 +1,36 @@
+.trackingGrid.improved .pitchSequence {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #78909c #0b2130;
+  max-height: 82px;
+  overscroll-behavior-x: contain;
+}
+
+.trackingGrid.improved .pitchSequence > div {
+  flex: 0 0 98px;
+  min-width: 98px;
+  box-sizing: border-box;
+}
+
+.trackingGrid.improved .pitchSequence::-webkit-scrollbar {
+  height: 6px;
+}
+
+.trackingGrid.improved .pitchSequence::-webkit-scrollbar-track {
+  background: #0b2130;
+}
+
+.trackingGrid.improved .pitchSequence::-webkit-scrollbar-thumb {
+  background: #78909c;
+  border-radius: 999px;
+}
+
+@media (max-width: 700px) {
+  .trackingGrid.improved .pitchSequence > div {
+    flex-basis: 82px;
+    min-width: 82px;
+  }
+}

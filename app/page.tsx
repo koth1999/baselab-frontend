@@ -492,8 +492,31 @@ const API = process.env.NEXT_PUBLIC_API_URL
     ? "https://baselab-backend.onrender.com"
     : "http://localhost:8001");
 const seasons = Array.from({ length: 2026 - 1982 + 1 }, (_, i) => 2026 - i);
-const today = "2026-07-17";
+const today = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(new Date());
 const compactDate = (date: string) => date.replaceAll("-", "");
+
+function visualPitchPosition(
+  pitch: { x?: number | null; y?: number | null; kind?: string; call?: string },
+) {
+  let x = pitch.x ?? 50;
+  let y = pitch.y ?? 50;
+  const isBall = pitch.kind === "ball" || pitch.call?.includes("볼");
+
+  if (isBall && x >= 0 && x <= 100 && y >= 0 && y <= 100) {
+    const nearestEdge = Math.min(x, 100 - x, y, 100 - y);
+    if (nearestEdge === x) x = -16;
+    else if (nearestEdge === 100 - x) x = 116;
+    else if (nearestEdge === y) y = -16;
+    else y = 116;
+  }
+
+  return { x, y };
+}
 const formatStat = (key: string, value: number | null | undefined) => {
   if (value == null) return "-";
   return ["AVG", "OBP", "SLG", "OPS", "WPCT", "ISO", "BABIP", "wOBA", "WPA"].includes(key)
@@ -588,7 +611,7 @@ export default function Home() {
   );
   const playerRequest = useRef(0);
   const playerAbort = useRef<AbortController | null>(null);
-  const tableDrag = useRef({ startX: 0, startScrollLeft: 0, moved: false });
+  const tableDrag = useRef({ startX: 0, startScrollLeft: 0, moved: false, suppressClick: false });
   useEffect(() => {
     if (!pitchLocationAtBat) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -603,6 +626,7 @@ export default function Home() {
       startX: event.clientX,
       startScrollLeft: event.currentTarget.scrollLeft,
       moved: false,
+      suppressClick: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.classList.add("dragging");
@@ -621,14 +645,15 @@ export default function Home() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     event.currentTarget.classList.remove("dragging");
-    window.setTimeout(() => {
-      tableDrag.current.moved = false;
-    }, 0);
+    tableDrag.current.suppressClick = tableDrag.current.moved;
+    tableDrag.current.moved = false;
+    window.setTimeout(() => { tableDrag.current.suppressClick = false; }, 250);
   }
   function blockDraggedClick(event: React.MouseEvent<HTMLElement>) {
-    if (!tableDrag.current.moved) return;
+    if (!tableDrag.current.suppressClick) return;
     event.preventDefault();
     event.stopPropagation();
+    tableDrag.current.suppressClick = false;
   }
   const filtered = useMemo(
     () =>
@@ -767,8 +792,7 @@ export default function Home() {
   const shownPlottedPitches = latestRelayAtBat?.pitches.some((pitch) => pitch.x != null && pitch.y != null)
     ? latestRelayAtBat.pitches.filter((pitch) => pitch.x != null && pitch.y != null).map((pitch) => ({
         ...pitch,
-        x: pitch.x as number,
-        y: pitch.y as number,
+        ...visualPitchPosition(pitch),
         kind: pitch.kind === "ball" ? "ball" : pitch.kind === "inplay" ? "out" : "strike",
       }))
     : plottedPitches;
@@ -877,7 +901,11 @@ export default function Home() {
   }
   function navigateTab(tab: "analysis" | "ranking" | "games", player?: Player) {
     setAppTab(tab);
-    if (tab === "games") setSelectedGame(null);
+    if (tab === "games") {
+      setSelectedGame(null);
+      setSelectedInning(0);
+      setGameDate(today);
+    }
     const path = tab === "analysis"
       ? `/analysis${player ? `?player=${encodeURIComponent(player.name)}&team=${encodeURIComponent(player.team)}` : ""}`
       : tab === "games" ? "/games" : "/ranking";
@@ -2022,7 +2050,10 @@ export default function Home() {
                                                 <span
                                                   key={pitch.number}
                                                   className={`miniPitch ${pitch.call.includes("볼") ? "ball" : "strike"}`}
-                                                  style={{ left: `${pitch.x}%`, top: `${pitch.y}%` }}
+                                                  style={{
+                                                    left: `${visualPitchPosition(pitch).x}%`,
+                                                    top: `${visualPitchPosition(pitch).y}%`,
+                                                  }}
                                                 >
                                                   {pitch.number}
                                                 </span>
