@@ -487,7 +487,10 @@ const sampleGames: Game[] = [
   },
 ];
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+const API = process.env.NEXT_PUBLIC_API_URL
+  ?? (process.env.NODE_ENV === "production"
+    ? "https://baselab-backend.onrender.com"
+    : "http://localhost:8001");
 const seasons = Array.from({ length: 2026 - 1982 + 1 }, (_, i) => 2026 - i);
 const today = "2026-07-17";
 const compactDate = (date: string) => date.replaceAll("-", "");
