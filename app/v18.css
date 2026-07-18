@@ -15,7 +15,7 @@
   transition: transform .2s ease;
 }
 
-.trackingGrid.improved .pitchView.leftBatter .stadiumScene {
+.trackingGrid.improved .pitchView.rightBatter .stadiumScene {
   transform: scaleX(-1);
 }
 
@@ -33,7 +33,7 @@
   backdrop-filter: blur(8px);
 }
 
-.pitchLocationField.leftBatter > img {
+.pitchLocationField.rightBatter > img {
   transform: scaleX(-1);
 }
 
@@ -59,7 +59,7 @@
     background-position: 62% center;
   }
 
-  .trackingGrid.improved .pitchView.leftBatter .stadiumScene {
+  .trackingGrid.improved .pitchView.rightBatter .stadiumScene {
     background-position: 38% center;
   }
 
