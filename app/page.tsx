@@ -7,7 +7,7 @@ type Player = {
   name: string;
   team: string;
   position: "타자" | "투수";
-  stats: Record<string, number>;
+  stats: Record<string, number | null>;
   score: number;
   grade: string;
   strengths: string[];
@@ -44,11 +44,32 @@ type LineupBatter = {
   position: string;
   pcode: string;
 };
+type AtBatPitch = {
+  number: number;
+  call: string;
+  pitch_type: string | null;
+  speed: number | null;
+  x: number | null;
+  y: number | null;
+  count?: string;
+  kind?: "ball" | "strike" | "inplay";
+};
+type RelayPlayer = { name: string; pcode: string; back_number: string; throws_bats: string };
+type RelayAtBat = {
+  bat_order: number;
+  name: string;
+  pcode: string;
+  result: string;
+  pitches: AtBatPitch[];
+  pitcher?: RelayPlayer | null;
+  batter_profile?: RelayPlayer | null;
+};
 type GameRelay = {
   inning: number;
   away_lineup: LineupBatter[];
   home_lineup: LineupBatter[];
   inning_batters: { away: LineupBatter[]; home: LineupBatter[] };
+  at_bats?: { away: RelayAtBat[]; home: RelayAtBat[] };
 };
 type Standing = {
   rank: number;
@@ -61,6 +82,16 @@ type Standing = {
   games_behind: number;
   last_10: string;
   streak: string;
+  team_avg?: number;
+  team_hits?: number;
+  team_hr?: number;
+  team_runs?: number;
+  team_rbi?: number;
+  team_ops?: number;
+  team_sb?: number;
+  team_era?: number;
+  team_whip?: number;
+  team_so?: number;
 };
 type Matchup = {
   found: boolean;
@@ -74,6 +105,38 @@ type Matchup = {
   bb?: number;
   avg?: number;
   ops?: number;
+};
+type PlayerSeason = Record<string, string | number | null> & {
+  year: number;
+  team_name: string;
+};
+type RecentGame = Record<string, string | number | null> & {
+  game_date: string;
+  opponent: string;
+};
+type PlayerProfileData = {
+  found: boolean;
+  profile?: {
+    kbo_id: string;
+    name: string;
+    name_en: string;
+    team: string;
+    back_number: string;
+    birth_date: string;
+    position: string;
+    primary_pos: string;
+    throws: string;
+    bats: string;
+    height: number;
+    weight: number;
+    career_history: string;
+    draft_info: string;
+    debut_year: number;
+    image_url: string | null;
+  };
+  seasons?: PlayerSeason[];
+  career?: Record<string, string | number | null>;
+  recent_games?: RecentGame[];
 };
 type InningSituation = {
   half: "초" | "말";
@@ -424,17 +487,28 @@ const sampleGames: Game[] = [
   },
 ];
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 const seasons = Array.from({ length: 2026 - 1982 + 1 }, (_, i) => 2026 - i);
 const today = "2026-07-17";
 const compactDate = (date: string) => date.replaceAll("-", "");
-const formatStat = (key: string, value: number) =>
-  ["AVG", "OBP", "SLG", "OPS", "WPCT"].includes(key)
+const formatStat = (key: string, value: number | null | undefined) => {
+  if (value == null) return "-";
+  return ["AVG", "OBP", "SLG", "OPS", "WPCT", "ISO", "BABIP", "wOBA", "WPA"].includes(key)
     ? value.toFixed(3).replace(/^0/, "")
     : ["ERA", "WHIP"].includes(key)
       ? value.toFixed(2)
-    : String(value);
-const hitterRankingFields = ["G", "PA", "AB", "AVG", "H", "2B", "3B", "HR", "RBI", "SB", "CS", "BB", "HBP", "SO", "GDP", "E", "OBP", "SLG", "OPS"];
+      : ["wRC+", "WAR"].includes(key)
+        ? value.toFixed(1)
+        : String(value);
+};
+const statLabels: Record<string, string> = {
+  G: "경기", PA: "타석", AB: "타수", AVG: "타율", H: "안타", "2B": "2루타", "3B": "3루타",
+  HR: "홈런", RBI: "타점", SB: "도루", CS: "도루실패", BB: "볼넷", HBP: "사구", SO: "삼진",
+  GDP: "병살타", E: "실책", OBP: "출루율", SLG: "장타율", W: "승", L: "패", SV: "세이브",
+  HLD: "홀드", WPCT: "승률", IP: "이닝", R: "실점", ER: "자책", ERA: "평균자책", WHIP: "WHIP",
+  OPS: "OPS", ISO: "ISO", BABIP: "BABIP", wOBA: "wOBA", "wRC+": "wRC+", WPA: "WPA", WAR: "WAR",
+};
+const hitterRankingFields = ["G", "PA", "AB", "AVG", "H", "2B", "3B", "HR", "RBI", "SB", "CS", "BB", "HBP", "SO", "GDP", "E", "OBP", "SLG", "OPS", "ISO", "BABIP", "wOBA", "wRC+", "WPA", "WAR"];
 const pitcherRankingFields = ["G", "ERA", "W", "L", "WPCT", "IP", "H", "HR", "BB", "HBP", "SO", "R", "ER", "WHIP", "SV", "HLD"];
 const sortPlayers = (list: Player[], kind: "타자" | "투수") => {
   const unique = new Map<string, Player>();
@@ -493,6 +567,9 @@ export default function Home() {
   const [games, setGames] = useState<Game[]>(sampleGames);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [selectedInning, setSelectedInning] = useState(0);
+  const [expandedAtBat, setExpandedAtBat] = useState("");
+  const [focusedAtBat, setFocusedAtBat] = useState<RelayAtBat | null>(null);
+  const [pitchLocationAtBat, setPitchLocationAtBat] = useState<RelayAtBat | null>(null);
   const [rankingKind, setRankingKind] = useState<"players" | "teams">(
     "players",
   );
@@ -501,11 +578,55 @@ export default function Home() {
   const [gameHitters, setGameHitters] = useState<Player[]>([]);
   const [gameRelay, setGameRelay] = useState<GameRelay | null>(null);
   const [gameUpdatedAt, setGameUpdatedAt] = useState("");
+  const [playerProfile, setPlayerProfile] = useState<PlayerProfileData | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [appTab, setAppTab] = useState<"analysis" | "ranking" | "games">(
     "ranking",
   );
   const playerRequest = useRef(0);
   const playerAbort = useRef<AbortController | null>(null);
+  const tableDrag = useRef({ startX: 0, startScrollLeft: 0, moved: false });
+  useEffect(() => {
+    if (!pitchLocationAtBat) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPitchLocationAtBat(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [pitchLocationAtBat]);
+  function startTableDrag(event: React.PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    tableDrag.current = {
+      startX: event.clientX,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.classList.add("dragging");
+  }
+  function moveTableDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const distance = event.clientX - tableDrag.current.startX;
+    if (Math.abs(distance) > 5) tableDrag.current.moved = true;
+    if (tableDrag.current.moved) {
+      event.preventDefault();
+      event.currentTarget.scrollLeft = tableDrag.current.startScrollLeft - distance;
+    }
+  }
+  function endTableDrag(event: React.PointerEvent<HTMLElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.currentTarget.classList.remove("dragging");
+    window.setTimeout(() => {
+      tableDrag.current.moved = false;
+    }, 0);
+  }
+  function blockDraggedClick(event: React.MouseEvent<HTMLElement>) {
+    if (!tableDrag.current.moved) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
   const filtered = useMemo(
     () =>
       sortPlayers(players, position).filter(
@@ -522,8 +643,11 @@ export default function Home() {
       ),
     [standings, query],
   );
-  const situation =
-    inningSituations[selectedInning === 0 ? 6 : selectedInning - 1];
+  const requestedInning = selectedInning || selectedGame?.inning || 9;
+  const situation = inningSituations[
+    Math.min(Math.max(requestedInning, 1), inningSituations.length) - 1
+  ];
+  const lastAvailableInning = Math.min(12, Math.max(9, selectedGame?.inning || 9));
   const isLiveGame = selectedGame?.status === "경기중";
   const viewingLive = isLiveGame && selectedInning === 0;
   const livePitcher = selectedGame
@@ -575,6 +699,19 @@ export default function Home() {
   const buildInningAtBats = (team: string, half: "초" | "말") => {
     const inning = selectedInning || selectedGame?.inning || 9;
     const side = half === "초" ? "away" : "home";
+    const relayAtBats = gameRelay?.at_bats?.[side] ?? [];
+    if (relayAtBats.length) {
+      return relayAtBats.map((atBat) => ({
+        order: atBat.bat_order,
+        batter: `${atBat.bat_order}번 · ${atBat.name}`,
+        result: atBat.result,
+        pitches: atBat.pitches.length,
+        pitchDetails: atBat.pitches,
+        relayAtBat: atBat,
+        rbi: 0,
+        official: true,
+      }));
+    }
     const officialBatters = gameRelay?.inning_batters?.[side]?.length
       ? gameRelay.inning_batters[side]
       : side === "away"
@@ -601,7 +738,10 @@ export default function Home() {
         : `타순 확인 중 · ${player.name}`,
       result: results[(inning + index + (half === "말" ? 2 : 0)) % results.length],
       pitches: 3 + ((inning + index) % 4),
+      pitchDetails: [] as AtBatPitch[],
+      relayAtBat: null as RelayAtBat | null,
       rbi: (inning + index) % 5 === 0 ? 1 : 0,
+      official: false,
     }));
   };
   const awayInningAtBats = selectedGame
@@ -610,6 +750,25 @@ export default function Home() {
   const homeInningAtBats = selectedGame
     ? buildInningAtBats(selectedGame.home, "말")
     : [];
+  const latestRelayAtBat = focusedAtBat
+    ?? gameRelay?.at_bats?.home?.at(-1)
+    ?? gameRelay?.at_bats?.away?.at(-1)
+    ?? null;
+  const shownPitcher = latestRelayAtBat?.pitcher;
+  const shownBatter = latestRelayAtBat?.batter_profile;
+  const handedness = (value: string | undefined, role: "투" | "타") => {
+    if (!value) return "";
+    if (role === "투") return value.includes("좌투") ? "좌투" : value.includes("우투") ? "우투" : "";
+    return value.includes("좌타") ? "좌타" : value.includes("우타") ? "우타" : value.includes("양타") ? "양타" : "";
+  };
+  const shownPlottedPitches = latestRelayAtBat?.pitches.some((pitch) => pitch.x != null && pitch.y != null)
+    ? latestRelayAtBat.pitches.filter((pitch) => pitch.x != null && pitch.y != null).map((pitch) => ({
+        ...pitch,
+        x: pitch.x as number,
+        y: pitch.y as number,
+        kind: pitch.kind === "ball" ? "ball" : pitch.kind === "inplay" ? "out" : "strike",
+      }))
+    : plottedPitches;
 
   async function loadPlayers(nextPosition = position, nextSeason = season) {
     const requestId = ++playerRequest.current;
@@ -629,7 +788,15 @@ export default function Home() {
       const ordered = sortPlayers(data.players, nextPosition);
       if (!ordered.length) throw new Error();
       setPlayers(ordered);
-      setSelected(ordered[0]);
+      const routePlayer = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("player")
+        : null;
+      const routeTeam = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("team")
+        : null;
+      setSelected(
+        ordered.find((player) => player.name === routePlayer && (!routeTeam || player.team === routeTeam)) ?? ordered[0],
+      );
       setStatus(
         `${data.qualification_label} · ${nextPosition === "타자" ? "타율" : "ERA"} 순`,
       );
@@ -654,11 +821,13 @@ export default function Home() {
       const data = await res.json();
       const nextGames: Game[] = data.games?.length ? data.games : [];
       setGames(nextGames);
-      setSelectedGame((current) =>
-        current
-          ? (nextGames.find((game) => game.game_id === current.game_id) ?? null)
-          : null,
-      );
+      const routeGameId = typeof window !== "undefined" && window.location.pathname.startsWith("/games/")
+        ? decodeURIComponent(window.location.pathname.split("/")[2] ?? "")
+        : "";
+      setSelectedGame((current) => {
+        const targetId = routeGameId || current?.game_id;
+        return targetId ? (nextGames.find((game) => game.game_id === targetId) ?? null) : null;
+      });
       setGameUpdatedAt(
         new Intl.DateTimeFormat("ko-KR", {
           hour: "2-digit",
@@ -700,9 +869,48 @@ export default function Home() {
     setSelectedGame(null);
     setSelectedInning(0);
     setQuery("");
-    window.history.replaceState(null, "", "/");
+    window.history.pushState(null, "", "/ranking");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+  function navigateTab(tab: "analysis" | "ranking" | "games", player?: Player) {
+    setAppTab(tab);
+    if (tab === "games") setSelectedGame(null);
+    const path = tab === "analysis"
+      ? `/analysis${player ? `?player=${encodeURIComponent(player.name)}&team=${encodeURIComponent(player.team)}` : ""}`
+      : tab === "games" ? "/games" : "/ranking";
+    window.history.pushState(null, "", path);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function openGame(game: Game) {
+    setSelectedGame(game);
+    setSelectedInning(0);
+    window.history.pushState(null, "", `/games/${encodeURIComponent(game.game_id)}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function closeGame() {
+    setSelectedGame(null);
+    setSelectedInning(0);
+    window.history.pushState(null, "", "/games");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  useEffect(() => {
+    const syncRoute = () => {
+      const path = window.location.pathname;
+      setAppTab(path.startsWith("/games") ? "games" : path.startsWith("/analysis") ? "analysis" : "ranking");
+      if (path.startsWith("/games/")) {
+        const gameId = decodeURIComponent(path.split("/")[2] ?? "");
+        const compactGameDate = gameId.slice(0, 8);
+        if (/^\d{8}$/.test(compactGameDate)) {
+          setGameDate(`${compactGameDate.slice(0, 4)}-${compactGameDate.slice(4, 6)}-${compactGameDate.slice(6, 8)}`);
+        }
+      } else if (path === "/games" || path === "/games/") {
+        setSelectedGame(null);
+      }
+    };
+    syncRoute();
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
   useEffect(() => {
     void loadGames(gameDate);
   }, [gameDate]);
@@ -746,6 +954,10 @@ export default function Home() {
     return () => controller.abort();
   }, [selectedGame?.game_id]);
   useEffect(() => {
+    setFocusedAtBat(null);
+    setExpandedAtBat("");
+  }, [selectedGame?.game_id, selectedInning]);
+  useEffect(() => {
     if (!selectedGame) {
       setGameRelay(null);
       return;
@@ -763,6 +975,24 @@ export default function Home() {
       });
     return () => controller.abort();
   }, [selectedGame?.game_id, selectedGame?.inning, selectedInning]);
+  useEffect(() => {
+    if (appTab !== "analysis" || !selected.name) return;
+    const controller = new AbortController();
+    setProfileLoading(true);
+    fetch(
+      `${API}/api/player-profile?name=${encodeURIComponent(selected.name)}&team=${encodeURIComponent(selected.team)}&position=${selected.position === "투수" ? "pitcher" : "hitter"}`,
+      { signal: controller.signal },
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => setPlayerProfile(data))
+      .catch(() => {
+        if (!controller.signal.aborted) setPlayerProfile(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProfileLoading(false);
+      });
+    return () => controller.abort();
+  }, [appTab, selected.name, selected.position, selected.team]);
   useEffect(() => {
     void loadPlayers("타자", "2026");
   }, []);
@@ -802,22 +1032,19 @@ export default function Home() {
         <nav className="appTabs">
           <button
             className={appTab === "ranking" ? "active" : ""}
-            onClick={() => setAppTab("ranking")}
+            onClick={() => navigateTab("ranking")}
           >
             랭킹
           </button>
           <button
             className={appTab === "analysis" ? "active" : ""}
-            onClick={() => setAppTab("analysis")}
+            onClick={() => navigateTab("analysis", selected)}
           >
             선수 분석
           </button>
           <button
             className={appTab === "games" ? "active" : ""}
-            onClick={() => {
-              setAppTab("games");
-              setSelectedGame(null);
-            }}
+            onClick={() => navigateTab("games")}
           >
             경기센터
           </button>
@@ -916,11 +1143,18 @@ export default function Home() {
             </label>
           </div>
           {rankingKind === "players" ? (
-            <div className="rankingTable detailed fullStats">
+            <div
+              className="rankingTable detailed fullStats dragScrollTable"
+              onPointerDown={startTableDrag}
+              onPointerMove={moveTableDrag}
+              onPointerUp={endTableDrag}
+              onPointerCancel={endTableDrag}
+              onClickCapture={blockDraggedClick}
+            >
               <div className="rankingTableHead" style={{ gridTemplateColumns: rankingColumns }}>
                 <span>선수</span>
                 <span>팀</span>
-                {rankingFields.map((field) => <span key={field}>{field}</span>)}
+                {rankingFields.map((field) => <span key={field}>{statLabels[field] ?? field}</span>)}
                 <span>분석</span>
               </div>
               {filtered.map((p) => (
@@ -929,16 +1163,16 @@ export default function Home() {
                   style={{ gridTemplateColumns: rankingColumns }}
                   onClick={() => {
                     setSelected(p);
-                    setAppTab("analysis");
+                    navigateTab("analysis", p);
                   }}
                 >
                   <strong>{p.name}</strong>
                   <span>{p.team}</span>
                   {rankingFields.map((field, index) =>
                     index === (position === "타자" ? 3 : 1) ? (
-                      <b key={field}>{formatStat(field, Number(p.stats[field] ?? 0))}</b>
+                      <b key={field}>{formatStat(field, p.stats[field])}</b>
                     ) : (
-                      <span key={field}>{formatStat(field, Number(p.stats[field] ?? 0))}</span>
+                      <span key={field}>{formatStat(field, p.stats[field])}</span>
                     ),
                   )}
                   <em>상세 보기 →</em>
@@ -946,7 +1180,14 @@ export default function Home() {
               ))}
             </div>
           ) : (
-            <div className="teamStandings">
+            <div
+              className="teamStandings dragScrollTable"
+              onPointerDown={startTableDrag}
+              onPointerMove={moveTableDrag}
+              onPointerUp={endTableDrag}
+              onPointerCancel={endTableDrag}
+              onClickCapture={blockDraggedClick}
+            >
               <div className="teamStandingsHead">
                 <span>순위</span>
                 <span>팀</span>
@@ -958,6 +1199,16 @@ export default function Home() {
                 <span>게임차</span>
                 <span>최근 10경기</span>
                 <span>연속</span>
+                <span>팀 타율</span>
+                <span>안타</span>
+                <span>홈런</span>
+                <span>득점</span>
+                <span>타점</span>
+                <span>도루</span>
+                <span>팀 OPS</span>
+                <span>평균자책</span>
+                <span>WHIP</span>
+                <span>탈삼진</span>
               </div>
               {filteredStandings.map((row) => (
                 <div
@@ -976,6 +1227,16 @@ export default function Home() {
                   <span className={row.streak.includes("승") ? "winning" : ""}>
                     {row.streak}
                   </span>
+                  <span>{row.team_avg ? row.team_avg.toFixed(3).replace(/^0/, "") : "-"}</span>
+                  <span>{row.team_hits ?? "-"}</span>
+                  <span>{row.team_hr ?? "-"}</span>
+                  <span>{row.team_runs ?? "-"}</span>
+                  <span>{row.team_rbi ?? "-"}</span>
+                  <span>{row.team_sb ?? "-"}</span>
+                  <span>{row.team_ops ? row.team_ops.toFixed(3).replace(/^0/, "") : "-"}</span>
+                  <span>{row.team_era ? row.team_era.toFixed(2) : "-"}</span>
+                  <span>{row.team_whip ? row.team_whip.toFixed(2) : "-"}</span>
+                  <span>{row.team_so ?? "-"}</span>
                 </div>
               ))}
               {!filteredStandings.length && (
@@ -995,7 +1256,7 @@ export default function Home() {
       {appTab === "analysis" && (
         <section className="tabPage analysisPage">
           <div className="pageTitle compact">
-            <button className="backLink" onClick={() => setAppTab("ranking")}>
+            <button className="backLink" onClick={() => navigateTab("ranking")}>
               ← 랭킹으로
             </button>
             <p>PLAYER INTELLIGENCE</p>
@@ -1006,6 +1267,13 @@ export default function Home() {
           </div>
           <article className="analysisCard standalone">
             <div className="playerHero">
+              {playerProfile?.profile?.image_url && (
+                <img
+                  className="playerPortrait"
+                  src={playerProfile.profile.image_url}
+                  alt={`${selected.name} 선수 사진`}
+                />
+              )}
               <div>
                 <p>
                   {selected.team} · {season} REGULAR SEASON
@@ -1037,6 +1305,13 @@ export default function Home() {
                     </small>
                   </div>
                 ))}
+              {selected.position === "타자" && (
+                <div className="wrcStat">
+                  <span>wRC+</span>
+                  <strong>{playerProfile?.seasons?.[0]?.wrc_plus ?? "-"}</strong>
+                  <small>리그 평균 100</small>
+                </div>
+              )}
             </div>
             <div className="detailGrid">
               <section>
@@ -1081,6 +1356,65 @@ export default function Home() {
                 </div>
               </section>
             </div>
+            <section className="playerBioSection">
+              <div className="sectionTitle">
+                <h3>선수 프로필</h3>
+                <span>{profileLoading ? "상세 기록 불러오는 중" : "프로 데뷔부터 현재까지"}</span>
+              </div>
+              {playerProfile?.profile ? (
+                <div className="playerBioGrid">
+                  <div><span>등번호</span><b>{playerProfile.profile.back_number || "-"}</b></div>
+                  <div><span>생년월일</span><b>{playerProfile.profile.birth_date?.slice(0, 10) || "-"}</b></div>
+                  <div><span>포지션</span><b>{playerProfile.profile.primary_pos || playerProfile.profile.position}</b></div>
+                  <div><span>투타</span><b>{playerProfile.profile.throws}투 {playerProfile.profile.bats}타</b></div>
+                  <div><span>신체</span><b>{playerProfile.profile.height}cm · {playerProfile.profile.weight}kg</b></div>
+                  <div><span>프로 입단</span><b>{playerProfile.profile.draft_info || `${playerProfile.profile.debut_year}년`}</b></div>
+                  <div className="wide"><span>선수 경력</span><b>{playerProfile.profile.career_history || "-"}</b></div>
+                </div>
+              ) : !profileLoading && <p className="profileEmpty">선수 프로필을 찾지 못했습니다.</p>}
+            </section>
+            <section className="careerSection">
+              <div className="sectionTitle">
+                <h3>연도별 정규시즌 기록</h3>
+                <span>{playerProfile?.career?.first_year ?? "-"}–{playerProfile?.career?.last_year ?? "현재"}</span>
+              </div>
+              <div className="careerTableWrap">
+                {selected.position === "타자" ? (
+                  <table className="careerTable">
+                    <thead><tr><th>연도</th><th>팀</th><th>경기</th><th>타석</th><th>타율</th><th>출루율</th><th>장타율</th><th>OPS</th><th>홈런</th><th>타점</th><th>도루</th><th>wRC+</th><th>WAR</th></tr></thead>
+                    <tbody>{playerProfile?.seasons?.map((row) => (
+                      <tr key={`${row.year}-${row.team_name}`}><td>{row.year}</td><td>{row.team_name}</td><td>{row.games}</td><td>{row.pa}</td><td>{row.avg}</td><td>{row.obp}</td><td>{row.slg}</td><td>{row.ops}</td><td>{row.hr}</td><td>{row.rbi}</td><td>{row.sb}</td><td className="highlight">{row.wrc_plus ?? "-"}</td><td>{row.war ?? "-"}</td></tr>
+                    ))}{playerProfile?.career && (
+                      <tr className="careerTotal"><td>통산</td><td>{playerProfile.career.seasons}시즌</td><td>{playerProfile.career.games ?? "-"}</td><td>{playerProfile.career.pa ?? "-"}</td><td>{playerProfile.career.avg ?? "-"}</td><td>{playerProfile.career.obp ?? "-"}</td><td>{playerProfile.career.slg ?? "-"}</td><td>{playerProfile.career.ops ?? "-"}</td><td>{playerProfile.career.hr ?? "-"}</td><td>{playerProfile.career.rbi ?? "-"}</td><td>{playerProfile.career.sb ?? "-"}</td><td className="highlight">{playerProfile.career.wrc_plus ?? "-"}</td><td>{playerProfile.career.war ?? "-"}</td></tr>
+                    )}</tbody>
+                  </table>
+                ) : (
+                  <table className="careerTable">
+                    <thead><tr><th>연도</th><th>팀</th><th>경기</th><th>이닝</th><th>ERA</th><th>승</th><th>패</th><th>세이브</th><th>홀드</th><th>삼진</th><th>WHIP</th><th>WAR</th></tr></thead>
+                    <tbody>{playerProfile?.seasons?.map((row) => (
+                      <tr key={`${row.year}-${row.team_name}`}><td>{row.year}</td><td>{row.team_name}</td><td>{row.games}</td><td>{row.ip}</td><td>{row.era}</td><td>{row.wins}</td><td>{row.losses}</td><td>{row.saves}</td><td>{row.holds}</td><td>{row.so}</td><td>{row.whip}</td><td>{row.war ?? "-"}</td></tr>
+                    ))}{playerProfile?.career && (
+                      <tr className="careerTotal"><td>통산</td><td>{playerProfile.career.seasons}시즌</td><td>{playerProfile.career.games ?? "-"}</td><td>{playerProfile.career.innings ?? "-"}</td><td>{playerProfile.career.era ?? "-"}</td><td>{playerProfile.career.wins ?? "-"}</td><td>{playerProfile.career.losses ?? "-"}</td><td>{playerProfile.career.saves ?? "-"}</td><td>{playerProfile.career.holds ?? "-"}</td><td>{playerProfile.career.so ?? "-"}</td><td>{playerProfile.career.whip ?? "-"}</td><td>{playerProfile.career.war ?? "-"}</td></tr>
+                    )}</tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+            <section className="recentGamesSection">
+              <div className="sectionTitle"><h3>최근 5경기</h3><span>KBO 정규시즌</span></div>
+              <div className="recentGamesGrid">
+                {playerProfile?.recent_games?.map((game) => (
+                  <article key={`${game.game_date}-${game.opponent}`}>
+                    <time>{game.game_date.slice(0, 10)}</time><strong>vs {game.opponent}</strong>
+                    {selected.position === "타자" ? (
+                      <p><b>{game.h_hits}안타</b> / {game.h_ab}타수 · {game.h_hr}홈런 · {game.h_rbi}타점 · {game.h_so}삼진</p>
+                    ) : (
+                      <p><b>{game.p_ip}이닝</b> · {game.p_hits}피안타 · {game.p_so}삼진 · {game.p_er}자책</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
           </article>
         </section>
       )}
@@ -1110,10 +1444,7 @@ export default function Home() {
                       type="button"
                       key={g.game_id}
                       className="gameCard"
-                      onClick={() => {
-                        setSelectedGame(g);
-                        setSelectedInning(0);
-                      }}
+                      onClick={() => openGame(g)}
                     >
                       <div className="gameMeta">
                         <span
@@ -1177,7 +1508,7 @@ export default function Home() {
             <div className="gameCenterView">
               <button
                 className="backLink"
-                onClick={() => setSelectedGame(null)}
+                onClick={closeGame}
               >
                 ← 경기 목록
               </button>
@@ -1265,7 +1596,7 @@ export default function Home() {
                           전체
                         </button>
                     )}
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
+                    {Array.from({ length: lastAvailableInning }, (_, index) => index + 1).map((i) => (
                           <button
                             key={i}
                             className={selectedInning === i ? "on" : ""}
@@ -1278,7 +1609,9 @@ export default function Home() {
                   </div>
                   <div className="inningContext" aria-live="polite">
                     <span>
-                      {viewingLive
+                      {latestRelayAtBat
+                        ? `${selectedInning || selectedGame.inning || 9}회 · ${focusedAtBat ? "선택한 타석" : "가장 최근 타석"}`
+                        : viewingLive
                         ? `${selectedGame.inning}회${selectedGame.inning_half}`
                         : selectedInning === 0
                           ? "주요 장면"
@@ -1302,20 +1635,26 @@ export default function Home() {
                   <div className="playSummary">
                     <span>
                       <b>투수</b>
-                      {viewingLive
+                      {latestRelayAtBat
+                        ? <>{shownPitcher?.name || "투수 정보 없음"} <em>{handedness(shownPitcher?.throws_bats, "투")}</em></>
+                        : viewingLive
                         ? livePitcher || "확인 중"
                         : situation.half === "초"
                           ? selectedGame.home_starter
                           : selectedGame.away_starter}
                     </span>
                     <strong>
-                      {viewingLive
+                      {latestRelayAtBat?.pitches.length
+                        ? `${latestRelayAtBat.pitches.at(-1)?.number}구 · ${latestRelayAtBat.pitches.at(-1)?.pitch_type || latestRelayAtBat.pitches.at(-1)?.call} · ${latestRelayAtBat.pitches.at(-1)?.speed || "-"} km/h`
+                        : viewingLive
                         ? `LIVE · ${selectedGame.inning}회${selectedGame.inning_half}`
                         : `${situation.pitchNo}구 · ${situation.pitchType} · ${situation.speed} km/h`}
                     </strong>
                     <span>
                       <b>타자</b>
-                      {viewingLive
+                      {latestRelayAtBat
+                        ? <>{shownBatter?.name || latestRelayAtBat.name} <em>{handedness(shownBatter?.throws_bats, "타")}</em> · {latestRelayAtBat.bat_order}번</>
+                        : viewingLive
                         ? liveBatter || "확인 중"
                         : situation.half === "초"
                           ? selectedGame.away
@@ -1474,7 +1813,7 @@ export default function Home() {
                         <i className="pitcherLeg back" />
                       </div>
                       <div className="strikeZone">
-                        {plottedPitches.map((pitch, i) => (
+                        {shownPlottedPitches.map((pitch, i) => (
                             <span
                               key={`${selectedInning}-${livePitchCount}-${i}`}
                               className={`pitch dynamicPitch ${pitch.kind} ${viewingLive ? "livePitchMarker" : ""}`}
@@ -1504,7 +1843,12 @@ export default function Home() {
                         />
                       )}
                       <div className="pitchLabel">
-                        {viewingLive ? (
+                        {latestRelayAtBat?.pitches.length ? (
+                          <>
+                            <b>{latestRelayAtBat.pitches.at(-1)?.number}구 · {latestRelayAtBat.pitches.at(-1)?.pitch_type || latestRelayAtBat.pitches.at(-1)?.call}</b>
+                            <span>{latestRelayAtBat.pitches.at(-1)?.speed || "-"} km/h · {focusedAtBat ? "선택한 타석 기준" : "이닝의 가장 최근 타석 기준"}</span>
+                          </>
+                        ) : viewingLive ? (
                           <>
                             <b>{livePitchCount || 0}구 · 투구 모션</b>
                             <span>카운트 기반 추정 궤적 · 15초 갱신</span>
@@ -1521,12 +1865,12 @@ export default function Home() {
                           </>
                         )}
                       </div>
-                      {pitchDetails.length > 0 && (
+                      {(latestRelayAtBat?.pitches.length || pitchDetails.length > 0) && (
                         <div className="pitchSequence">
-                          {pitchDetails.slice(0, viewingLive ? livePitchCount : 5).map((pitch) => (
+                          {(latestRelayAtBat?.pitches ?? pitchDetails.slice(0, viewingLive ? livePitchCount : 5)).map((pitch) => (
                             <div key={pitch.number}>
                               <b>{pitch.number}구</b>
-                              <strong>{pitch.type}</strong>
+                              <strong>{"pitch_type" in pitch ? pitch.pitch_type || "구종 미제공" : pitch.type}</strong>
                               <span>{pitch.speed} km/h</span>
                               <em>{pitch.call}</em>
                             </div>
@@ -1627,7 +1971,7 @@ export default function Home() {
                         <h3>양팀 타자별 타석 기록</h3>
                       </div>
                       <small>
-                        {isLiveGame ? "현재 타자는 실시간 반영" : "이닝별 타석 기록"}
+                        타석을 클릭하면 위 투구 화면의 기준이 변경됩니다
                       </small>
                     </div>
                     <div className="teamAtBatSplit">
@@ -1644,15 +1988,75 @@ export default function Home() {
                             <small>{group.half === "초" ? "원정팀 공격" : "홈팀 공격"}</small>
                           </header>
                           <div className="atBatRows">
-                            {group.rows.map((atBat, index) => (
-                              <div key={`${group.half}-${selectedInning}-${atBat.order}-${index}`}>
-                                <b>{atBat.order || "-"}</b>
-                                <strong>{atBat.batter}</strong>
-                                <span>{atBat.result}</span>
-                                <em>{atBat.pitches}구</em>
-                                <i>{atBat.rbi ? `${atBat.rbi}타점` : "-"}</i>
-                              </div>
-                            ))}
+                            {group.rows.map((atBat, index) => {
+                              const rowKey = `${group.half}-${selectedInning}-${atBat.order}-${index}`;
+                              const isExpanded = expandedAtBat === rowKey;
+                              return (
+                                <div className={`atBatItem ${isExpanded ? "expanded" : ""}`} key={rowKey}>
+                                  <button
+                                    className="atBatSummary"
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    onClick={() => {
+                                      setExpandedAtBat(isExpanded ? "" : rowKey);
+                                      if (atBat.relayAtBat) setFocusedAtBat(atBat.relayAtBat);
+                                    }}
+                                  >
+                                    <b>{atBat.order || "-"}</b>
+                                    <strong>{atBat.batter}</strong>
+                                    <span>{atBat.result}</span>
+                                    <em>{atBat.pitches}구</em>
+                                    <i>{isExpanded ? "접기" : "상세"}</i>
+                                  </button>
+                                  {isExpanded && (
+                                    <div className="atBatDetail">
+                                      {atBat.pitchDetails.length ? (
+                                        <>
+                                          <div className="miniStrikeZone" aria-label="투구 위치 스트라이크존">
+                                            <i className="zoneGrid" />
+                                            {atBat.pitchDetails.map((pitch) =>
+                                              pitch.x != null && pitch.y != null ? (
+                                                <span
+                                                  key={pitch.number}
+                                                  className={`miniPitch ${pitch.call.includes("볼") ? "ball" : "strike"}`}
+                                                  style={{ left: `${pitch.x}%`, top: `${pitch.y}%` }}
+                                                >
+                                                  {pitch.number}
+                                                </span>
+                                              ) : null,
+                                            )}
+                                            {!atBat.pitchDetails.some((pitch) => pitch.x != null && pitch.y != null) && (
+                                              <small>위치 데이터<br />미제공</small>
+                                            )}
+                                          </div>
+                                          <div className="atBatPitchList">
+                                            {atBat.pitchDetails.map((pitch) => (
+                                              <div key={pitch.number}>
+                                                <b>{pitch.number}구</b>
+                                                <strong>{pitch.call}</strong>
+                                                <span>{pitch.pitch_type || "구종 미제공"}</span>
+                                                <em>{pitch.speed ? `${pitch.speed} km/h` : "구속 미제공"}</em>
+                                              </div>
+                                            ))}
+                                          </div>
+                                          {atBat.relayAtBat && atBat.pitchDetails.some((pitch) => pitch.x != null && pitch.y != null) && (
+                                            <button
+                                              type="button"
+                                              className="openPitchLocation"
+                                              onClick={() => setPitchLocationAtBat(atBat.relayAtBat)}
+                                            >
+                                              투구 위치 보기
+                                            </button>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <p>이 경기에서는 선수별 투구 상세가 제공되지 않았습니다.</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </section>
                       ))}
@@ -1663,6 +2067,55 @@ export default function Home() {
             </div>
           )}
         </section>
+      )}
+      {pitchLocationAtBat && (
+        <div className="pitchLocationOverlay" role="presentation" onMouseDown={() => setPitchLocationAtBat(null)}>
+          <section
+            className="pitchLocationModal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="투구 위치 보기"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <h2>투구 위치 보기</h2>
+              <button type="button" aria-label="닫기" onClick={() => setPitchLocationAtBat(null)}>×</button>
+            </header>
+            <div className="pitchMatchup">
+              <div>
+                <img src={`https://www.yagoonara.com/players/${pitchLocationAtBat.pitcher?.pcode}.jpg`} alt="" />
+                <span><small>투수</small><strong>{pitchLocationAtBat.pitcher?.name || "투수 정보 없음"}</strong><em>{pitchLocationAtBat.pitcher?.throws_bats} NO.{pitchLocationAtBat.pitcher?.back_number}</em></span>
+              </div>
+              <b>VS</b>
+              <div>
+                <img src={`https://www.yagoonara.com/players/${pitchLocationAtBat.batter_profile?.pcode || pitchLocationAtBat.pcode}.jpg`} alt="" />
+                <span><small>타자</small><strong>{pitchLocationAtBat.batter_profile?.name || pitchLocationAtBat.name}</strong><em>{pitchLocationAtBat.batter_profile?.throws_bats} NO.{pitchLocationAtBat.batter_profile?.back_number}</em></span>
+              </div>
+            </div>
+            <div className="pitchLocationField">
+              <img src="/gamecenter-stadium-v2.png" alt="구장 포수 시점" />
+              <div className="pitchModalZone"><i /></div>
+              {pitchLocationAtBat.pitches.map((pitch) => pitch.x != null && pitch.y != null ? (
+                <span
+                  key={pitch.number}
+                  className={`pitchModalMarker ${pitch.kind || "strike"}`}
+                  style={{ left: `${32 + pitch.x * 0.36}%`, top: `${18 + pitch.y * 0.55}%` }}
+                >{pitch.number}</span>
+              ) : null)}
+            </div>
+            <p className="pitchResult"><strong>{pitchLocationAtBat.name}</strong> : {pitchLocationAtBat.result}</p>
+            <div className="pitchModalList">
+              {pitchLocationAtBat.pitches.slice().reverse().map((pitch) => (
+                <div key={pitch.number}>
+                  <b className={pitch.kind || "strike"}>{pitch.number}</b>
+                  <strong>{pitch.call}</strong>
+                  <span>{pitch.speed ? `${pitch.speed}km/h` : "-"} {pitch.pitch_type || "구종 미제공"}</span>
+                  <em>{pitch.count ? `| ${pitch.count}` : ""}</em>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       )}
       <footer>
         <span>BASELAB</span>
