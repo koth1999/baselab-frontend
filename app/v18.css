@@ -1,0 +1,70 @@
+.trackingGrid.improved .pitchView,
+.trackingGrid.improved .pitchView[data-stadium] {
+  background: #173246 !important;
+}
+
+.trackingGrid.improved .stadiumScene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  background:
+    linear-gradient(90deg, rgba(4,19,31,.42) 0, rgba(4,19,31,.08) 31%, transparent 55%),
+    linear-gradient(0deg, rgba(4,19,31,.28), transparent 35%),
+    url('/gamecenter-stadium-v2.png') center center / cover no-repeat;
+  transition: transform .2s ease;
+}
+
+.trackingGrid.improved .pitchView.leftBatter .stadiumScene {
+  transform: scaleX(-1);
+}
+
+.trackingGrid.improved .batterSideBadge {
+  position: absolute;
+  right: 24px;
+  top: 68px;
+  z-index: 10;
+  padding: 6px 11px;
+  border-radius: 16px;
+  background: rgba(7, 28, 42, .84);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  backdrop-filter: blur(8px);
+}
+
+.pitchLocationField.leftBatter > img {
+  transform: scaleX(-1);
+}
+
+.pitchLocationField > img {
+  transition: transform .2s ease;
+}
+
+.modalBatterSide {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  padding: 5px 9px;
+  border-radius: 14px;
+  background: rgba(7, 28, 42, .82);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+@media (max-width: 700px) {
+  .trackingGrid.improved .stadiumScene {
+    background-position: 62% center;
+  }
+
+  .trackingGrid.improved .pitchView.leftBatter .stadiumScene {
+    background-position: 38% center;
+  }
+
+  .trackingGrid.improved .batterSideBadge {
+    top: 48px;
+    right: 8px;
+  }
+}

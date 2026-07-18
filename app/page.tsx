@@ -622,6 +622,7 @@ export default function Home() {
   }, [pitchLocationAtBat]);
   function startTableDrag(event: React.PointerEvent<HTMLElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if ((event.target as Element).closest("button, a, input, select")) return;
     tableDrag.current = {
       startX: event.clientX,
       startScrollLeft: event.currentTarget.scrollLeft,
@@ -784,6 +785,7 @@ export default function Home() {
     ?? null;
   const shownPitcher = latestRelayAtBat?.pitcher;
   const shownBatter = latestRelayAtBat?.batter_profile;
+  const shownBatterIsLeft = shownBatter?.throws_bats?.includes("좌타") ?? false;
   const handedness = (value: string | undefined, role: "투" | "타") => {
     if (!value) return "";
     if (role === "투") return value.includes("좌투") ? "좌투" : value.includes("우투") ? "우투" : "";
@@ -1192,6 +1194,7 @@ export default function Home() {
                 <button
                   key={`${p.name}-${p.team}`}
                   style={{ gridTemplateColumns: rankingColumns }}
+                  onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => {
                     setSelected(p);
                     navigateTab("analysis", p);
@@ -1749,12 +1752,14 @@ export default function Home() {
                   )}
                   <div className="trackingGrid improved">
                     <article
-                      className="pitchView"
+                      className={`pitchView ${shownBatterIsLeft ? "leftBatter" : "rightBatter"}`}
                       data-stadium={selectedGame.stadium}
                     >
+                      <div className="stadiumScene" aria-hidden="true" />
                       <span className="stadiumBadge">
                         {selectedGame.stadium} 구장
                       </span>
+                      <span className="batterSideBadge">{shownBatterIsLeft ? "좌타자" : "우타자"}</span>
                       <div className="countBoard">
                         <div className="miniScore">
                           <span
@@ -2126,8 +2131,9 @@ export default function Home() {
                 <span><small>타자</small><strong>{pitchLocationAtBat.batter_profile?.name || pitchLocationAtBat.name}</strong><em>{pitchLocationAtBat.batter_profile?.throws_bats} NO.{pitchLocationAtBat.batter_profile?.back_number}</em></span>
               </div>
             </div>
-            <div className="pitchLocationField">
+            <div className={`pitchLocationField ${pitchLocationAtBat.batter_profile?.throws_bats?.includes("좌타") ? "leftBatter" : "rightBatter"}`}>
               <img src="/gamecenter-stadium-v2.png" alt="구장 포수 시점" />
+              <span className="modalBatterSide">{pitchLocationAtBat.batter_profile?.throws_bats?.includes("좌타") ? "좌타자" : "우타자"}</span>
               <div className="pitchModalZone"><i /></div>
               {pitchLocationAtBat.pitches.map((pitch) => pitch.x != null && pitch.y != null ? (
                 <span
