@@ -490,9 +490,9 @@ const sampleGames: Game[] = [
 const API = process.env.NEXT_PUBLIC_API_URL
   ?? (process.env.NODE_ENV === "production"
     ? "https://baselab-backend.onrender.com"
-    : "http://localhost:8001");
+    : "http://localhost:8000");
 const seasons = Array.from({ length: 2026 - 1982 + 1 }, (_, i) => 2026 - i);
-const today = new Intl.DateTimeFormat("sv-SE", {
+const today = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul",
   year: "numeric",
   month: "2-digit",
@@ -611,7 +611,33 @@ export default function Home() {
   );
   const playerRequest = useRef(0);
   const playerAbort = useRef<AbortController | null>(null);
+  const profileCache = useRef(new Map<string, PlayerProfileData>());
+  const profilePrefetches = useRef(new Map<string, Promise<PlayerProfileData>>());
   const tableDrag = useRef({ startX: 0, startScrollLeft: 0, moved: false, suppressClick: false });
+
+  const playerProfileKey = (player: Player) =>
+    `${player.name}|${player.team}|${player.position}`;
+  const playerProfileUrl = (player: Player) =>
+    `${API}/api/player-profile?name=${encodeURIComponent(player.name)}&team=${encodeURIComponent(player.team)}&position=${player.position === "투수" ? "pitcher" : "hitter"}`;
+  function fetchPlayerProfile(player: Player) {
+    const key = playerProfileKey(player);
+    const cached = profileCache.current.get(key);
+    if (cached) return Promise.resolve(cached);
+    const pending = profilePrefetches.current.get(key);
+    if (pending) return pending;
+    const request = fetch(playerProfileUrl(player))
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: PlayerProfileData) => {
+        profileCache.current.set(key, data);
+        return data;
+      })
+      .finally(() => profilePrefetches.current.delete(key));
+    profilePrefetches.current.set(key, request);
+    return request;
+  }
+  function prefetchPlayerProfile(player: Player) {
+    void fetchPlayerProfile(player).catch(() => undefined);
+  }
   useEffect(() => {
     if (!pitchLocationAtBat) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1010,21 +1036,25 @@ export default function Home() {
   }, [selectedGame?.game_id, selectedGame?.inning, selectedInning]);
   useEffect(() => {
     if (appTab !== "analysis" || !selected.name) return;
-    const controller = new AbortController();
+    let active = true;
+    const cached = profileCache.current.get(playerProfileKey(selected));
+    if (cached) {
+      setPlayerProfile(cached);
+      setProfileLoading(false);
+      return;
+    }
     setProfileLoading(true);
-    fetch(
-      `${API}/api/player-profile?name=${encodeURIComponent(selected.name)}&team=${encodeURIComponent(selected.team)}&position=${selected.position === "투수" ? "pitcher" : "hitter"}`,
-      { signal: controller.signal },
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data) => setPlayerProfile(data))
+    fetchPlayerProfile(selected)
+      .then((data) => {
+        if (active) setPlayerProfile(data);
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setPlayerProfile(null);
+        if (active) setPlayerProfile(null);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setProfileLoading(false);
+        if (active) setProfileLoading(false);
       });
-    return () => controller.abort();
+    return () => { active = false; };
   }, [appTab, selected.name, selected.position, selected.team]);
   useEffect(() => {
     void loadPlayers("타자", "2026");
@@ -1195,6 +1225,8 @@ export default function Home() {
                   key={`${p.name}-${p.team}`}
                   style={{ gridTemplateColumns: rankingColumns }}
                   onPointerDown={(event) => event.stopPropagation()}
+                  onPointerEnter={() => prefetchPlayerProfile(p)}
+                  onFocus={() => prefetchPlayerProfile(p)}
                   onClick={() => {
                     setSelected(p);
                     navigateTab("analysis", p);
@@ -1231,18 +1263,12 @@ export default function Home() {
                 <span>무</span>
                 <span>승률</span>
                 <span>게임차</span>
+                <span>득점</span>
+                <span>홈런</span>
+                <span>타점</span>
+                <span>방어율</span>
                 <span>최근 10경기</span>
                 <span>연속</span>
-                <span>팀 타율</span>
-                <span>안타</span>
-                <span>홈런</span>
-                <span>득점</span>
-                <span>타점</span>
-                <span>도루</span>
-                <span>팀 OPS</span>
-                <span>평균자책</span>
-                <span>WHIP</span>
-                <span>탈삼진</span>
               </div>
               {filteredStandings.map((row) => (
                 <div
@@ -1257,20 +1283,14 @@ export default function Home() {
                   <span>{row.draws}</span>
                   <em>{row.win_rate.toFixed(3).replace(/^0/, "")}</em>
                   <span>{row.games_behind.toFixed(1)}</span>
+                  <span>{row.team_runs ?? "-"}</span>
+                  <span>{row.team_hr ?? "-"}</span>
+                  <span>{row.team_rbi ?? "-"}</span>
+                  <span>{row.team_era?.toFixed(2) ?? "-"}</span>
                   <span>{row.last_10}</span>
                   <span className={row.streak.includes("승") ? "winning" : ""}>
                     {row.streak}
                   </span>
-                  <span>{row.team_avg ? row.team_avg.toFixed(3).replace(/^0/, "") : "-"}</span>
-                  <span>{row.team_hits ?? "-"}</span>
-                  <span>{row.team_hr ?? "-"}</span>
-                  <span>{row.team_runs ?? "-"}</span>
-                  <span>{row.team_rbi ?? "-"}</span>
-                  <span>{row.team_sb ?? "-"}</span>
-                  <span>{row.team_ops ? row.team_ops.toFixed(3).replace(/^0/, "") : "-"}</span>
-                  <span>{row.team_era ? row.team_era.toFixed(2) : "-"}</span>
-                  <span>{row.team_whip ? row.team_whip.toFixed(2) : "-"}</span>
-                  <span>{row.team_so ?? "-"}</span>
                 </div>
               ))}
               {!filteredStandings.length && (
@@ -1415,11 +1435,11 @@ export default function Home() {
               <div className="careerTableWrap">
                 {selected.position === "타자" ? (
                   <table className="careerTable">
-                    <thead><tr><th>연도</th><th>팀</th><th>경기</th><th>타석</th><th>타율</th><th>출루율</th><th>장타율</th><th>OPS</th><th>홈런</th><th>타점</th><th>도루</th><th>wRC+</th><th>WAR</th></tr></thead>
+                    <thead><tr><th>연도</th><th>팀</th><th>경기</th><th>타석</th><th>안타</th><th>홈런</th><th>타점</th><th>득점</th><th>도루</th><th>타율</th><th>출루율</th><th>장타율</th><th>OPS</th><th>wRC+</th><th>WAR</th></tr></thead>
                     <tbody>{playerProfile?.seasons?.map((row) => (
-                      <tr key={`${row.year}-${row.team_name}`}><td>{row.year}</td><td>{row.team_name}</td><td>{row.games}</td><td>{row.pa}</td><td>{row.avg}</td><td>{row.obp}</td><td>{row.slg}</td><td>{row.ops}</td><td>{row.hr}</td><td>{row.rbi}</td><td>{row.sb}</td><td className="highlight">{row.wrc_plus ?? "-"}</td><td>{row.war ?? "-"}</td></tr>
+                      <tr key={`${row.year}-${row.team_name}`}><td>{row.year}</td><td>{row.team_name}</td><td>{row.games}</td><td>{row.pa}</td><td>{row.hits ?? "-"}</td><td>{row.hr}</td><td>{row.rbi}</td><td>{row.runs ?? "-"}</td><td>{row.sb}</td><td>{row.avg}</td><td>{row.obp}</td><td>{row.slg}</td><td>{row.ops}</td><td className="highlight">{row.wrc_plus ?? "-"}</td><td>{row.war ?? "-"}</td></tr>
                     ))}{playerProfile?.career && (
-                      <tr className="careerTotal"><td>통산</td><td>{playerProfile.career.seasons}시즌</td><td>{playerProfile.career.games ?? "-"}</td><td>{playerProfile.career.pa ?? "-"}</td><td>{playerProfile.career.avg ?? "-"}</td><td>{playerProfile.career.obp ?? "-"}</td><td>{playerProfile.career.slg ?? "-"}</td><td>{playerProfile.career.ops ?? "-"}</td><td>{playerProfile.career.hr ?? "-"}</td><td>{playerProfile.career.rbi ?? "-"}</td><td>{playerProfile.career.sb ?? "-"}</td><td className="highlight">{playerProfile.career.wrc_plus ?? "-"}</td><td>{playerProfile.career.war ?? "-"}</td></tr>
+                      <tr className="careerTotal"><td>통산</td><td>{playerProfile.career.seasons}시즌</td><td>{playerProfile.career.games ?? "-"}</td><td>{playerProfile.career.pa ?? "-"}</td><td>{playerProfile.career.hits ?? "-"}</td><td>{playerProfile.career.hr ?? "-"}</td><td>{playerProfile.career.rbi ?? "-"}</td><td>{playerProfile.career.runs ?? "-"}</td><td>{playerProfile.career.sb ?? "-"}</td><td>{playerProfile.career.avg ?? "-"}</td><td>{playerProfile.career.obp ?? "-"}</td><td>{playerProfile.career.slg ?? "-"}</td><td>{playerProfile.career.ops ?? "-"}</td><td className="highlight">{playerProfile.career.wrc_plus ?? "-"}</td><td>{playerProfile.career.war ?? "-"}</td></tr>
                     )}</tbody>
                   </table>
                 ) : (
